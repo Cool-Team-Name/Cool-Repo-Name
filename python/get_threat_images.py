@@ -1,17 +1,12 @@
 from __future__ import print_function
 from __future__ import division
 
-import tarfile
-import sys
-import os
 import numpy as np
-from matplotlib import pyplot as plt
-import cv2
 import pandas as pd
-import seaborn as sns
-import scipy.stats as stats
-from PIL import Image
 import scipy.misc
+from skimage import io, exposure, img_as_uint, img_as_float
+
+io.use_plugin('freeimage')
 
 execfile('tsahelper.py')
 
