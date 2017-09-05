@@ -4,9 +4,6 @@ from __future__ import division
 import numpy as np
 import pandas as pd
 import scipy.misc
-from skimage import io, exposure, img_as_uint, img_as_float
-
-io.use_plugin('freeimage')
 
 execfile('tsahelper.py')
 
@@ -51,18 +48,6 @@ def get_single_image(infile, nth_image):
 
     return np.flipud(img[nth_image])
 
-APS_FILE_NAME = '3de88afea1b8fd356b119c5b44dcb47e.aps'
-SLICE = 0
-an_img = get_single_image(APS_FILE_NAME, 0)
-
-# fig, axarr = plt.subplots(nrows=1, ncols=2, figsize=(20, 5))
-#
-# axarr[0].imshow(an_img, cmap=COLORMAP)
-# plt.subplot(122)
-# plt.hist(an_img.flatten(), bins=256, color='c')
-# plt.xlabel("Raw Scan Pixel Value")
-# plt.ylabel("Frequency")
-# plt.show()
 Zone1Threats = Zone1Threats.values
 SLICE = 0
 
@@ -70,10 +55,15 @@ for i in Zone1Threats:
     file_name = 'stage1_aps/' + i + '.aps'
 
     an_img = get_single_image(file_name, SLICE)
+    img_rescaled = convert_to_grayscale(an_img)
+    img_high_contrast = spread_spectrum(img_rescaled)
+    # masked_img = roi(img_high_contrast, zone_slice_list[0][0])
+    # cropped_img = crop(masked_img, zone_crop_list[0][0])
+    normalized_img = normalize(img_high_contrast)
 
     file_name = file_name.replace('stage1_aps/', '')
-    file_to_save = 'zone1-threat-images/' + file_name.replace('.aps', '') + '_Slice' + '_' + str(SLICE) + '.jpeg'
-    scipy.misc.imsave(file_to_save, an_img, dpi = 1000)
+    file_to_save = 'zone1-threat-images/' + file_name.replace('.aps', '') + '_Slice' + '_' + str(SLICE) + '.png'
+    scipy.misc.imsave(file_to_save, normalized_img)
 
 
 
