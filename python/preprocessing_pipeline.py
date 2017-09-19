@@ -80,13 +80,7 @@ MODEL_PATH = 'tsa_logs/big_model/'
 MODEL_NAME = ('tsa-{}-lr-{}-{}-{}-tz-{}'.format('alexnet-v0.1', LEARNING_RATE, IMAGE_DIM,
                                                 IMAGE_DIM, THREAT_ZONE ))
 
-#this generates the file names corresponding to what we should submit
-sample_sub = pd.read_csv('stage1_sample_submission.csv')
 
-a = pd.DataFrame(sample_sub.Id.str.split('_').tolist(),
-             columns = ['File','Zone'])
-
-submission_files = list(set(a.File))
 #if you need to process the submission data
 #SUBJECT_LIST = submission_files
 
@@ -482,52 +476,5 @@ def train_conv_net():
 #
 #
 
-#instantiate the model
-model = alexnet(IMAGE_DIM, IMAGE_DIM, LEARNING_RATE)
-
-#it took 69 iterations to train the model
-#read in the model file. this was created during the train_conv_net()
-model.load(MODEL_PATH + MODEL_NAME + '-69')
-
-#this should just return the prepared data we're supposed to predict on
-def submission_pipeline(filename, path):
-    preprocessed_tz_scans = []
-    feature_batch = []
-    # Load a batch of preprocessed tz scans
-    preprocessed_tz_scans = np.load(os.path.join(path, filename))
-
-    # Shuffle to randomize for input into the model
-    np.random.shuffle(preprocessed_tz_scans)
-
-    # separate features and labels
-    for example_list in preprocessed_tz_scans:
-        for example in example_list:
-            feature_batch.append(example[0])
-
-    feature_batch = np.asarray(feature_batch, dtype=np.float32)
-
-    return feature_batch
-
-PREPROCESSED_DATA_FOLDER = 'submission_preprocessed/'
-
-#call this to grab the files we need
-get_train_test_file_list()
-#because we're predicting on all 100, combine these
-submission_tables = TRAIN_SET_FILE_LIST + TEST_SET_FILE_LIST
-
-#we have the file names, just need to grab the actual data
-for j, test_f_in in enumerate(submission_tables):
-    if j == 0:
-        val_features = submission_pipeline(test_f_in, PREPROCESSED_DATA_FOLDER)
-    else:
-        tmp_feature_batch = submission_pipeline(test_f_in, PREPROCESSED_DATA_FOLDER)
-        val_features = np.concatenate((tmp_feature_batch, val_features), axis=0)
-
-val_features = val_features.reshape(-1, IMAGE_DIM, IMAGE_DIM, 1)
-
-#predict
-pred = model.predict(X=val_features)
-#probability of a threat should be the second column
-pred = pred[:,1]
 
 
