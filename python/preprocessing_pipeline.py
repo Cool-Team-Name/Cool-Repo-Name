@@ -16,8 +16,12 @@ from tflearn.layers.normalization import local_response_normalization
 import random
 from timeit import default_timer as timer
 
-#import tsahelper as tsa
+#this file has functions to manipulate images
 execfile('tsahelper.py')
+
+#generates x evenly split positive & negative list of subjects
+#creates SUBJECT_LIST
+execfile('get_sample_data.py')
 
 #---------------------------------------------------------------------------------------
 # Constants
@@ -55,8 +59,9 @@ execfile('tsahelper.py')
 # MODEL_NAME                    Name of the model files
 #
 #----------------------------------------------------------------------------------------
-INPUT_FOLDER = 'sample data/aps/'#'tsa_datasets/stage1/aps'
-PREPROCESSED_DATA_FOLDER = 'preprocessed/'#'tsa_datasets/preprocessed/'
+
+INPUT_FOLDER = 'stage1_aps'#'tsa_datasets/stage1/aps'
+PREPROCESSED_DATA_FOLDER = 'preprocessed/' #'submission_preprocessed/'
 STAGE1_LABELS = 'sample data/stage1_labels.csv'
 THREAT_ZONE = 1
 BATCH_SIZE = 16
@@ -70,11 +75,20 @@ TEST_SET_FILE_LIST = []
 IMAGE_DIM = 250
 LEARNING_RATE = 1e-3
 N_TRAIN_STEPS = 1
-TRAIN_PATH = 'tsa_logs/train/'
-MODEL_PATH = 'tsa_logs/model/'
+TRAIN_PATH = 'tsa_logs/big_train/'
+MODEL_PATH = 'tsa_logs/big_model/'
 MODEL_NAME = ('tsa-{}-lr-{}-{}-{}-tz-{}'.format('alexnet-v0.1', LEARNING_RATE, IMAGE_DIM,
                                                 IMAGE_DIM, THREAT_ZONE ))
 
+#this generates the file names corresponding to what we should submit
+sample_sub = pd.read_csv('stage1_sample_submission.csv')
+
+a = pd.DataFrame(sample_sub.Id.str.split('_').tolist(),
+             columns = ['File','Zone'])
+
+submission_files = list(set(a.File))
+#if you need to process the submission data
+#SUBJECT_LIST = submission_files
 
 # ---------------------------------------------------------------------------------------
 # preprocess_tsa_data(): preprocesses the tsa datasets
@@ -91,20 +105,20 @@ def preprocess_tsa_data():
     # SUBJECT_LIST = df['Subject'].unique()
 
     # OPTION 2: get a list of all subjects for whom there is data
-    # SUBJECT_LIST = [os.path.splitext(subject)[0] for subject in os.listdir(INPUT_FOLDER)]
+    #SUBJECT_LIST = [os.path.splitext(subject)[0] for subject in os.listdir(INPUT_FOLDER)]
 
     # OPTION 3: get a list of subjects for small bore test purposes
-    SUBJECT_LIST = ['00360f79fd6e02781457eda48f85da90', '0043db5e8c819bffc15261b1f1ac5e42',
-                    '0050492f92e22eed3474ae3a6fc907fa', '006ec59fa59dd80a64c85347eef810c7',
-                    '0097503ee9fa0606559c56458b281a08', '011516ab0eca7cad7f5257672ddde70e']
+    # SUBJECT_LIST = ['00360f79fd6e02781457eda48f85da90', '0043db5e8c819bffc15261b1f1ac5e42',
+    #                 '0050492f92e22eed3474ae3a6fc907fa', '006ec59fa59dd80a64c85347eef810c7',
+    #                 '0097503ee9fa0606559c56458b281a08', '011516ab0eca7cad7f5257672ddde70e']
 
     # intialize tracking and saving items
     batch_num = 1
-
+    threat_zone_examples = []
     start_time = timer()
 
     for subject in SUBJECT_LIST:
-        threat_zone_examples = []
+
         # read in the images
         print('--------------------------------------------------------------')
         print('t+> {:5.3f} |Reading images for subject #: {}'.format(timer() - start_time,
@@ -118,13 +132,15 @@ def preprocess_tsa_data():
         # for each threat zone, loop through each image, mask off the zone and then crop it
         for tz_num, threat_zone_x_crop_dims in enumerate(zip(zone_slice_list,
                                                              zone_crop_list)):
-
             threat_zone = threat_zone_x_crop_dims[0]
             crop_dims = threat_zone_x_crop_dims[1]
 
             # get label
-            label = np.array(get_subject_zone_label(tz_num,
+            if(subject not in submission_files):
+                label = np.array(get_subject_zone_label(tz_num,
                                                         get_subject_labels(STAGE1_LABELS, subject)))
+            else:
+                label = 0
 
             for img_num, img in enumerate(images):
 
@@ -216,13 +232,14 @@ def preprocess_tsa_data():
                 # save batch.  Note that the trainer looks for tz{} where {} is a
                 # tz_num 1 based in the minibatch file to select which batches to
                 # use for training a given threat zone
-                np.save(PREPROCESSED_DATA_FOLDER +
-                        'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
-                                                                           len(threat_zone_examples[0][1][0]),
-                                                                           len(threat_zone_examples[0][1][1]),
-                                                                           batch_num),
-                        tz_examples_to_save)
-                del tz_examples_to_save
+                if(tz_num == 0):
+                    np.save(PREPROCESSED_DATA_FOLDER +
+                            'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
+                                                                               len(threat_zone_examples[0][1][0]),
+                                                                               len(threat_zone_examples[0][1][1]),
+                                                                               batch_num),
+                            tz_examples_to_save)
+                    del tz_examples_to_save
 
             # reset for next batch
             del threat_zone_examples
@@ -231,34 +248,35 @@ def preprocess_tsa_data():
 
     # we may run out of subjects before we finish a batch, so we write out
     # the last batch stub
-    if (len(threat_zone_examples) > 0):
-        for tz_num, tz in enumerate(zone_slice_list):
-            tz_examples_to_save = []
+    # if (len(threat_zone_examples) > 0):
+    #     for tz_num, tz in enumerate(zone_slice_list):
+    #         tz_examples_to_save = []
+    #
+    #         # write out the batch and reset
+    #         print(' -> writing: ' + PREPROCESSED_DATA_FOLDER
+    #               + 'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
+    #                                                                    len(threat_zone_examples[0][1][0]),
+    #                                                                    len(threat_zone_examples[0][1][1]),
+    #                                                                    batch_num))
+    #
+    #         # get this tz's examples
+    #         tz_examples = [example for example in threat_zone_examples if example[0] ==
+    #                        [tz_num]]
+    #
+    #         # drop unused columns
+    #         tz_examples_to_save.append([[features_label[1], features_label[2]]
+    #                                     for features_label in tz_examples])
+    #
+    #         # save batch
+    #         if (tz_num == 0):
+    #             np.save(PREPROCESSED_DATA_FOLDER +
+    #                     'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
+    #                                                                        len(threat_zone_examples[0][1][0]),
+    #                                                                        len(threat_zone_examples[0][1][1]),
+    #                                                                        batch_num),
+    #                     tz_examples_to_save)
 
-            # write out the batch and reset
-            print(' -> writing: ' + PREPROCESSED_DATA_FOLDER
-                  + 'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
-                                                                       len(threat_zone_examples[0][1][0]),
-                                                                       len(threat_zone_examples[0][1][1]),
-                                                                       batch_num))
-
-            # get this tz's examples
-            tz_examples = [example for example in threat_zone_examples if example[0] ==
-                           [tz_num]]
-
-            # drop unused columns
-            tz_examples_to_save.append([[features_label[1], features_label[2]]
-                                        for features_label in tz_examples])
-
-            # save batch
-            np.save(PREPROCESSED_DATA_FOLDER +
-                    'preprocessed_TSA_scans-tz{}-{}-{}-b{}.npy'.format(tz_num + 1,
-                                                                       len(threat_zone_examples[0][1][0]),
-                                                                       len(threat_zone_examples[0][1][1]),
-                                                                       batch_num),
-                    tz_examples_to_save)
-
-preprocess_tsa_data()
+#preprocess_tsa_data()
 
 
 # ---------------------------------------------------------------------------------------
@@ -288,7 +306,7 @@ def get_train_test_file_list():
             len(FILE_LIST) - train_test_split, len(FILE_LIST)))
 
 # unit test ----------------------------
-get_train_test_file_list()
+#get_train_test_file_list()
         # print (
 
 # ---------------------------------------------------------------------------------------
@@ -325,7 +343,7 @@ def input_pipeline(filename, path):
     return feature_batch, label_batch
 
 # unit test ------------------------------------------------------------------------
-print ('Train Set -----------------------------')
+# print ('Train Set -----------------------------')
 # for f_in in TRAIN_SET_FILE_LIST:
 #    feature_batch, label_batch = input_pipeline(f_in, PREPROCESSED_DATA_FOLDER)
 #    print (' -> features shape {}:{}:{}'.format(len(feature_batch),
@@ -356,9 +374,10 @@ def shuffle_train_set(train_set):
     sorted_file_list = random.shuffle(train_set)
     TRAIN_SET_FILE_LIST = sorted_file_list
 
+
 # Unit test ---------------
 #print ('Before Shuffling ->', TRAIN_SET_FILE_LIST)
-shuffle_train_set(TRAIN_SET_FILE_LIST)
+#shuffle_train_set(TRAIN_SET_FILE_LIST)
 #print ('After Shuffling ->', TRAIN_SET_FILE_LIST)
 
 #---------------------------------------------------------------------------------------
@@ -437,20 +456,78 @@ def train_conv_net():
         shuffle_train_set(TRAIN_SET_FILE_LIST)
 
         # run through every batch in the training set
-        for f_in in TRAIN_SET_FILE_LIST:
+        for f_num, f_in in enumerate(TRAIN_SET_FILE_LIST):
             # read in a batch of features and labels for training
-            feature_batch, label_batch = input_pipeline(f_in, PREPROCESSED_DATA_FOLDER)
-            feature_batch = feature_batch.reshape(-1, IMAGE_DIM, IMAGE_DIM, 1)
-            print ('Feature Batch Shape ->', feature_batch.shape)
 
-            # run the fit operation
-            model.fit({'features': feature_batch}, {'labels': label_batch}, n_epoch=1,
-                      validation_set=({'features': val_features}, {'labels': val_labels}),
-                      shuffle=True, snapshot_step=None, show_metric=True,
-                      run_id=MODEL_NAME)
+            if f_num == 0:
+                feature_batch , label_batch = input_pipeline(f_in, PREPROCESSED_DATA_FOLDER)
+            else:
+                tmp_feature_batch, tmp_label_batch = input_pipeline(f_in, PREPROCESSED_DATA_FOLDER)
+                feature_batch = np.concatenate((tmp_feature_batch, feature_batch), axis=0)
+                label_batch = np.concatenate((tmp_label_batch, label_batch), axis=0)
+
+        feature_batch = feature_batch.reshape(-1, IMAGE_DIM, IMAGE_DIM, 1)
+
+
+        # run the fit operation
+        model.fit({'features': feature_batch}, {'labels': label_batch}, n_epoch=1,
+                  validation_set=({'features': val_features}, {'labels': val_labels}),
+                  shuffle=True, snapshot_step=None, show_metric=True,
+                  run_id=MODEL_NAME)
+
+
 
 # unit test -----------------------------------
-train_conv_net()
+#train_conv_net()
+#
+#
 
+#instantiate the model
+model = alexnet(IMAGE_DIM, IMAGE_DIM, LEARNING_RATE)
+
+#it took 69 iterations to train the model
+#read in the model file. this was created during the train_conv_net()
+model.load(MODEL_PATH + MODEL_NAME + '-69')
+
+#this should just return the prepared data we're supposed to predict on
+def submission_pipeline(filename, path):
+    preprocessed_tz_scans = []
+    feature_batch = []
+    # Load a batch of preprocessed tz scans
+    preprocessed_tz_scans = np.load(os.path.join(path, filename))
+
+    # Shuffle to randomize for input into the model
+    np.random.shuffle(preprocessed_tz_scans)
+
+    # separate features and labels
+    for example_list in preprocessed_tz_scans:
+        for example in example_list:
+            feature_batch.append(example[0])
+
+    feature_batch = np.asarray(feature_batch, dtype=np.float32)
+
+    return feature_batch
+
+PREPROCESSED_DATA_FOLDER = 'submission_preprocessed/'
+
+#call this to grab the files we need
+get_train_test_file_list()
+#because we're predicting on all 100, combine these
+submission_tables = TRAIN_SET_FILE_LIST + TEST_SET_FILE_LIST
+
+#we have the file names, just need to grab the actual data
+for j, test_f_in in enumerate(submission_tables):
+    if j == 0:
+        val_features = submission_pipeline(test_f_in, PREPROCESSED_DATA_FOLDER)
+    else:
+        tmp_feature_batch = submission_pipeline(test_f_in, PREPROCESSED_DATA_FOLDER)
+        val_features = np.concatenate((tmp_feature_batch, val_features), axis=0)
+
+val_features = val_features.reshape(-1, IMAGE_DIM, IMAGE_DIM, 1)
+
+#predict
+pred = model.predict(X=val_features)
+#probability of a threat should be the second column
+pred = pred[:,1]
 
 
